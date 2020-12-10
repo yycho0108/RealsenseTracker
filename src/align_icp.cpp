@@ -1,4 +1,4 @@
-#include "rs_tracker/align.hpp"
+#include "rs_tracker/align_icp.hpp"
 
 #include <fmt/printf.h>
 
@@ -37,7 +37,8 @@ static ceres::Solver::Options GetOptions() {
   return options;
 }
 
-float ComputeAlignment(const Cloud& src, const Cloud& dst,
+float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
+                       const cho::core::PointCloud<float, 3>& dst,
                        const std::vector<Eigen::Matrix3f>& src_covs,
                        const std::vector<Eigen::Matrix3f>& dst_covs,
                        const std::vector<int>& dst_indices,
@@ -61,7 +62,7 @@ float ComputeAlignment(const Cloud& src, const Cloud& dst,
     const int dst_i = dst_indices[i];
 
     ceres::CostFunction* cost =
-        GICPCost::Create(src.row(src_i).transpose(), dst.row(dst_i).transpose(),
+        GICPCost::Create(src.GetPoint(src_i), dst.GetPoint(dst_i),
                          src_covs[src_i], dst_covs[dst_i]);
     ceres::LossFunction* loss = new ceres::SoftLOneLoss(2.0f);
     // ceres::LossFunction* loss = nullptr;
@@ -101,9 +102,9 @@ float ComputeAlignment(const Cloud& src, const Cloud& dst,
   return summary.final_cost;
 }
 
-float ComputeAlignment(const Cloud& src, const Cloud& dst,
+float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
+                       const cho::core::PointCloud<float, 3>& dst,
                        Eigen::Isometry3f* const transform) {
-  fmt::print("{}x{}, {}x{}", src.rows(), src.cols(), dst.rows(), dst.cols());
   static constexpr const int kMaxIter = 128;
 
   // Correspondences
@@ -117,17 +118,17 @@ float ComputeAlignment(const Cloud& src, const Cloud& dst,
 
   // Covariances
   fmt::print("COV\n");
-  std::vector<Eigen::Matrix3f> src_covs(src.rows(),
-                                        Eigen::Matrix3f::Identity());
+  std::vector<Eigen::Matrix3f> src_covs(src.GetNumPoints());
   ComputeCovariances(*src_tree, src, &src_covs, true);
-  std::vector<Eigen::Matrix3f> dst_covs(dst.rows(),
-                                        Eigen::Matrix3f::Identity());
+  std::vector<Eigen::Matrix3f> dst_covs(dst.GetNumPoints());
   ComputeCovariances(*dst_tree, dst, &dst_covs, true);
 
   // TODO(yycho0108): Accept estimate as an input argument.
   // Eigen::Isometry3f estimate = transform;
   Eigen::Isometry3f estimate = Eigen::Isometry3f::Identity();
-  Cloud tmp = (estimate * src.transpose()).transpose();
+  cho::core::PointCloud<float, 3>
+      tmp;  // = (estimate * src.transpose()).transpose();
+  tmp.GetData() = estimate * src.GetData();
   std::vector<Eigen::Matrix3f> tmp_covs(src_covs);
   float cost{0};
   for (int i = 0; i < kMaxIter; ++i) {
@@ -145,7 +146,7 @@ float ComputeAlignment(const Cloud& src, const Cloud& dst,
 
     // Update transforms.
     estimate = delta_xfm;
-    tmp.transpose() = estimate * src.transpose();
+    tmp.GetData() = estimate * src.GetData();
   }
   *transform = estimate;
   fmt::print("final cost : {}\n", cost);

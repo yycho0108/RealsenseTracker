@@ -107,3 +107,6 @@ tags
 #
 .clangd/
 build/
+
+data/
+third_party/

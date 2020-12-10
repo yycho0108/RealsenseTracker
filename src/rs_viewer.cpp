@@ -2,12 +2,14 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <librealsense2/hpp/rs_frame.hpp>
+#include <memory>
 #include <thread>
 
 #include <fmt/format.h>
 #include <fmt/printf.h>
 #include <Eigen/Core>
+
+#include <librealsense2/hpp/rs_frame.hpp>
 #include <librealsense2/rs.hpp>
 
 #include <cho_util/proto/render.pb.h>
@@ -17,9 +19,12 @@
 #include <cho_util/core/geometry/sphere.hpp>
 #include <cho_util/type/convert.hpp>
 // #include <cho_util/vis/direct_viewer.hpp>
+#include <cho_util/vis/convert_proto.hpp>
 #include <cho_util/vis/render_data.hpp>
 #include <cho_util/vis/subprocess_viewer.hpp>
 // #include <cho_util/vis/remote_viewer.hpp>
+
+#include "rs_tracker/rs_viewer.hpp"
 
 void ConvertPointCloud(const rs2::points& cloud_in,
                        const rs2::video_frame& color_frame,
@@ -86,93 +91,118 @@ void ConvertPointCloud(const rs2::points& cloud_in,
 #endif
 }
 
-struct RsViewer {
-  RsViewer() : viewer{false} {}
-  // RsViewer() : viewer{} {}
-  void SetupPipeline() {
-    fmt::print("Begin querying devices\n");
-    for (const auto& dev : ctx.query_devices()) {
-      rs2::pipeline pipe(ctx);
-      rs2::config cfg;
-      cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
-      pipe.start(cfg);
-      pipelines.emplace_back(std::move(pipe));
-    }
-
-    if (pipelines.empty()) {
-      throw std::runtime_error(
-          "No valid devices found! Failed to initialize pipelines.\n");
-    }
-  }
-  void SetupViewer() {
-    viewer.Start();
-
-    //;cho::core::PointCloud<float, 3> cloud_geom;
-    //;render_data = cho::vis::RenderData{
-    //;    .tag = "cloud",
-    //;    .geometry = cloud_geom,
-    //;    .color = {255, 255, 255},
-    //;    .representation = cho::vis::RenderData::Representation::kPoints,
-    //;    .quit = false};
-  }
-
-  void Loop() {
-    fmt::print("Begin processing loop\n");
-    double last_timestamp{0};
-    while (true) {
-      for (const auto& pipe : pipelines) {
-        // Get input.
-        auto frames = pipe.wait_for_frames();
-        auto color_frame = frames.get_color_frame();
-        auto depth_frame = frames.get_depth_frame();
-        fmt::print("dstamp = {}\n", depth_frame.get_timestamp());
-        if (depth_frame.get_timestamp() <= last_timestamp + 1000.f) {
-          continue;
-        }
-        last_timestamp = depth_frame.get_timestamp();
-
-        // Construct point cloud from color+depth_frame.
-        cloud.map_to(color_frame);
-        points = cloud.calculate(depth_frame);
-        fmt::print("Got = {}\n", points.size());
-
-        cho::core::PointCloud<float, 3> cloud_vis;
-#if 1
-        std::vector<std::uint8_t> colors;
-        ConvertPointCloud(points, color_frame, &cloud_vis, &colors);
-        // render_data.geometry = cloud_vis;
-        if (cloud_vis.GetSize() >= 107) {
-          fmt::print("{}\n", cloud_vis.GetPoint(107).transpose());
-        }
-#else
-        cloud_vis.SetNumPoints(512);
-        cloud_vis.GetData().setRandom();
-#endif
-        cho::vis::RenderData render_data{
-            .tag = "cloud",
-            .geometry = cloud_vis,
-            .color = colors,
-            .representation = cho::vis::RenderData::Representation::kPoints,
-            .quit = false};
-        viewer.Render(render_data);
-      }
-    }
-  }
+// Declare impl class.
+class RsViewer::Impl {
+ public:
+  explicit Impl(const RsViewerSettings& settings);
+  virtual ~Impl();
+  void SetupPipeline();
+  void SetupViewer();
+  void Loop();
 
  private:
+  RsViewerSettings settings_;
+  cho::vis::SubprocessViewer viewer_;
+
+  // Data
   rs2::pointcloud cloud;
   rs2::points points;
   rs2::context ctx;
   std::vector<rs2::pipeline> pipelines;
-
-  cho::vis::SubprocessViewer viewer;
   // cho::vis::RemoteViewerClient viewer;
   // cho::vis::RenderData render_data;
 };
 
-int main() {
-  RsViewer viewer;
-  viewer.SetupPipeline();
-  viewer.SetupViewer();
-  viewer.Loop();
+// Forward to impl.
+RsViewer::RsViewer(const RsViewerSettings& settings)
+    : impl_(std::make_unique<Impl>(settings)) {}
+RsViewer::~RsViewer() {}
+void RsViewer::SetupPipeline() { return impl_->SetupPipeline(); }
+void RsViewer::SetupViewer() { return impl_->SetupViewer(); }
+void RsViewer::Loop() { return impl_->Loop(); }
+
+RsViewer::Impl::Impl(const RsViewerSettings& settings)
+    : settings_(settings), viewer_{false} {}
+
+RsViewer::Impl::~Impl() = default;
+
+void RsViewer::Impl::SetupPipeline() {
+  fmt::print("Begin querying devices\n");
+  for (const auto& dev : ctx.query_devices()) {
+    rs2::pipeline pipe(ctx);
+    rs2::config cfg;
+    cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
+    pipe.start(cfg);
+    pipelines.emplace_back(std::move(pipe));
+  }
+
+  if (pipelines.empty()) {
+    throw std::runtime_error(
+        "No valid devices found! Failed to initialize pipelines.\n");
+  }
+}
+
+void RsViewer::Impl::SetupViewer() { viewer_.Start(); }
+
+void RsViewer::Impl::Loop() {
+  fmt::print("Begin processing loop\n");
+  double last_timestamp{0};
+
+  int count{0};
+  while (true) {
+    for (const auto& pipe : pipelines) {
+      // Get input data.
+      auto frames = pipe.wait_for_frames();
+      auto color_frame = frames.get_color_frame();
+      auto depth_frame = frames.get_depth_frame();
+      fmt::print("dstamp = {}\n", depth_frame.get_timestamp());
+      if (depth_frame.get_timestamp() <=
+          last_timestamp + settings_.frame_interval_ms) {
+        continue;
+      }
+      last_timestamp = depth_frame.get_timestamp();
+
+      // Construct point cloud from color+depth_frame.
+      cloud.map_to(color_frame);
+      points = cloud.calculate(depth_frame);
+      fmt::print("Got = {}\n", points.size());
+
+      cho::core::PointCloud<float, 3> cloud_vis;
+#if 1
+      std::vector<std::uint8_t> colors;
+      ConvertPointCloud(points, color_frame, &cloud_vis, &colors);
+      // render_data.geometry = cloud_vis;
+      if (cloud_vis.GetSize() >= 107) {
+        fmt::print("{}\n", cloud_vis.GetPoint(107).transpose());
+      }
+#else
+      cloud_vis.SetNumPoints(512);
+      cloud_vis.GetData().setRandom();
+#endif
+      cho::vis::RenderData render_data{
+          .tag = "cloud",
+          .geometry = cloud_vis,
+          .color = colors,
+          .representation = cho::vis::RenderData::Representation::kPoints,
+          .quit = false};
+      viewer_.Render(render_data);
+
+      // If enabled, save to file.
+      if (!settings_.record_file.empty()) {
+#if 0
+        cho::proto::core::geometry::PointCloud cloud_pb;
+        cho::type::Convert(cloud_vis, &cloud_pb);
+#else
+        auto cloud_pb =
+            cho::type::Convert<cho::proto::core::geometry::PointCloud>(
+                cloud_vis);
+#endif
+        std::ofstream fout{fmt::format(settings_.record_file, count),
+                           std::ios_base::out | std::ios_base::binary};
+        cloud_pb.SerializeToOstream(&fout);
+      }
+
+      ++count;
+    }
+  }
 }

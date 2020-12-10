@@ -1,13 +1,12 @@
 #include "rs_tracker/point_cloud_utils.hpp"
-#include <Eigen/src/Core/GlobalFunctions.h>
 
-#include <boost/functional/hash/hash_fwd.hpp>
 #include <tuple>
 #include <unordered_map>
 
-#include "boost/functional/hash.hpp"
+#include <boost/functional/hash.hpp>
 
 #include <Eigen/Dense>
+#include <Eigen/Geometry>
 #include <Eigen/SVD>
 
 template <typename T>
@@ -22,6 +21,15 @@ struct MatrixHash : std::unary_function<T, std::size_t> {
 };
 
 namespace rs_tracker {
+
+void ComputeExtents(const cho::core::PointCloud<float, 3>& cloud,
+                    Eigen::AlignedBox3f* const box) {
+  box->setEmpty();
+  for (int i = 0; i < cloud.GetNumPoints(); ++i) {
+    const auto& p = cloud.GetPoint(i);
+    box->extend(p);
+  }
+}
 
 void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
                      const float voxel_size,
@@ -39,7 +47,7 @@ void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
     }
   }
 
-  // Shallow aliasing check
+  // Shallow aliasing check.
   if (cloud_out == &cloud_in) {
     cho::core::PointCloud<float, 3> tmp;
     tmp.SetNumPoints(vox.size());
@@ -60,20 +68,22 @@ void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
   }
 }
 
-void FindCorrespondences(const KDTree& tree, const Cloud& source,
+void FindCorrespondences(const KDTree& tree,
+                         const cho::core::PointCloud<float, 3>& source,
                          std::vector<int>* const indices,
                          std::vector<float>* const squared_distances) {
+  const int n = source.GetNumPoints();
   // Reset memory.
   indices->clear();
   squared_distances->clear();
-  indices->reserve(source.rows());
-  squared_distances->reserve(source.rows());
+  indices->reserve(n);
+  squared_distances->reserve(n);
 
   // Temps
-  long knn_indices[1];
+  int knn_indices[1];
   float knn_squared_distances[1];
-  for (int i = 0; i < source.rows(); ++i) {
-    const Eigen::Vector3f& query_point = source.row(i);
+  for (int i = 0; i < n; ++i) {
+    const Eigen::Vector3f& query_point = source.GetPoint(i);
     tree.index->knnSearch(reinterpret_cast<const float*>(query_point.data()), 1,
                           knn_indices, knn_squared_distances);
     indices->emplace_back(knn_indices[0]);
@@ -81,19 +91,21 @@ void FindCorrespondences(const KDTree& tree, const Cloud& source,
   }
 }
 
-void ComputeCovariances(const KDTree& tree, const Cloud& cloud,
+void ComputeCovariances(const KDTree& tree,
+                        const cho::core::PointCloud<float, 3>& cloud,
                         std::vector<Eigen::Matrix3f>* const covs,
                         const bool use_gicp) {
   // Set default number of neighbors and allocate containers.
   constexpr const int kNeighbors = 32;
-  std::vector<long> knn_indices(kNeighbors + 1);
+  std::vector<int> knn_indices(kNeighbors + 1);
   std::vector<float> knn_squared_distances(kNeighbors + 1);
 
+  const int n = cloud.GetNumPoints();
   // Allocate covariance output.
-  covs->resize(cloud.rows());
-  for (int i = 0; i < cloud.rows(); ++i) {
+  covs->resize(n);
+  for (int i = 0; i < n; ++i) {
     // Extract input and output pair.
-    const Eigen::Vector3f& query_point = cloud.row(i);
+    const Eigen::Vector3f& query_point = cloud.GetPoint(i);
     Eigen::Matrix3f& cov = covs->at(i);
 
     // Search neighbors.
@@ -105,7 +117,7 @@ void ComputeCovariances(const KDTree& tree, const Cloud& cloud,
     Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
     for (int j = 1; j < kNeighbors + 1; ++j) {
       const int index = knn_indices[j];
-      centroid += cloud.row(index).transpose();
+      centroid += cloud.GetPoint(index);
     }
     centroid /= (kNeighbors);
 
@@ -113,7 +125,7 @@ void ComputeCovariances(const KDTree& tree, const Cloud& cloud,
     cov.setZero();
     for (int j = 1; j < kNeighbors + 1; ++j) {
       const int index = knn_indices[j];
-      const Eigen::Vector3f delta = cloud.row(index).transpose() - centroid;
+      const Eigen::Vector3f delta = cloud.GetPoint(index) - centroid;
       cov += delta * delta.transpose();
     }
 

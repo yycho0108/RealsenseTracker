@@ -20,13 +20,18 @@
 #include <cho_util/vis/subprocess_viewer.hpp>
 // #include <cho_util/vis/remote_viewer.hpp>
 
-#include "rs_tracker/align.hpp"
+#include "rs_tracker/align_icp.hpp"
 #include "rs_tracker/data_source.hpp"
 #include "rs_tracker/data_source_rs.hpp"
 #include "rs_tracker/point_cloud_utils.hpp"
 
+std::ostream& operator<<(std::ostream& os, const Eigen::Isometry3f& xfm){
+    return os << Eigen::Quaternionf{xfm.linear()}.coeffs().transpose() << '|' << xfm.translation().transpose();
+}
+
 struct RsTracker {
-  RsTracker() : viewer{false}, source_{} {}
+  RsTracker() : viewer{false}, source_{128, 100.0f} {}
+  // RsTracker() : viewer{false}, source_{} {}
   // RsTracker() : viewer{} {}
 
   void SetupViewer() {
@@ -76,9 +81,7 @@ struct RsTracker {
         fmt::print("Align {} - {}\n", prev_cloud.GetNumPoints(),
                    curr_cloud.GetNumPoints());
         Eigen::Isometry3f transform;
-        rs_tracker::ComputeAlignment(prev_cloud.GetData().transpose(),
-                                     curr_cloud.GetData().transpose(),
-                                     &transform);
+        rs_tracker::ComputeAlignment(prev_cloud, curr_cloud, &transform);
         fmt::print("xfm={}\n", transform);
         fmt::print("DONE\n");
       }
@@ -99,8 +102,8 @@ struct RsTracker {
   // cho::vis::RemoteViewerClient viewer;
   // cho::vis::RenderData render_data;
 
-  // rs_tracker::RandomSource source_;
-  rs_tracker::RealsenseSource source_;
+  rs_tracker::RandomSource source_;
+  // rs_tracker::RealsenseSource source_;
 };
 
 int main() {
