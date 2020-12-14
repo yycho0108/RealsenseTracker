@@ -5,6 +5,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 # #############################################################################
 # find relevant packages ...
+find_package(Threads)
 find_package(nanoflann REQUIRED)
 find_package(realsense2 REQUIRED)
 find_package(Ceres REQUIRED)
@@ -13,7 +14,7 @@ find_package(Ceres REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options)
 find_package(fmt REQUIRED)
-# find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(ChoUtil REQUIRED)
 # #############################################################################
 
@@ -33,14 +34,32 @@ target_link_libraries(viewer fmt ChoUtil::core ChoUtil::vis Eigen3::Eigen)
 # #############################################################################
 
 # #############################################################################
-# Actual viewer - lib
-add_library(rs_viewer src/rs_viewer.cpp include/rs_tracker/rs_viewer.hpp)
-target_include_directories(rs_viewer PUBLIC include)
+# Simple realsense camera driver.
+add_library(rs_driver SHARED src/rs_driver.cpp
+                             include/rs_tracker/rs_driver.hpp)
+target_include_directories(rs_driver PUBLIC include)
 target_include_directories(
-  rs_viewer PRIVATE ${realsense2_INCLUDE_DIR} ${ChoUtil_INCLUDE_DIRS}
+  rs_driver PRIVATE ${realsense2_INCLUDE_DIR} ${ChoUtil_INCLUDE_DIRS}
                     ${Eigen_INCLUDE_DIRS})
-target_link_libraries(rs_viewer fmt ${realsense2_LIBRARY} ChoUtil::core
-                      ChoUtil::vis Eigen3::Eigen)
+target_link_libraries(
+  rs_driver
+  fmt
+  ${realsense2_LIBRARY}
+  ChoUtil::core
+  Eigen3::Eigen
+  Threads::Threads
+  ${OpenCV_LIBS})
+# #############################################################################
+
+# #############################################################################
+# Actual viewer - lib
+add_library(rs_viewer SHARED src/rs_viewer.cpp
+                             include/rs_tracker/rs_viewer.hpp)
+target_include_directories(rs_viewer PUBLIC include)
+target_include_directories(rs_viewer PRIVATE ${ChoUtil_INCLUDE_DIRS}
+                                             ${Eigen_INCLUDE_DIRS})
+target_link_libraries(rs_viewer fmt ChoUtil::core ChoUtil::vis Eigen3::Eigen
+                      rs_driver)
 # #############################################################################
 
 # #############################################################################
@@ -53,7 +72,8 @@ target_link_libraries(rs_viewer_app rs_viewer Boost::program_options)
 
 # #############################################################################
 # Replay app
-add_executable(rs_replay_app src/rs_replay_app.cpp)
+add_executable(rs_replay_app src/rs_replay_app.cpp src/align_icp.cpp
+                             src/point_cloud_utils.cpp)
 target_include_directories(rs_replay_app PUBLIC include)
 target_include_directories(rs_replay_app PRIVATE ${BOOST_INCLUDE_DIRS})
 target_link_libraries(
@@ -66,10 +86,10 @@ target_link_libraries(
 add_executable(
   rs_tracker
   src/rs_tracker.cpp
-  src/align_icp.cpp
+  src/align_gicp.cpp
   src/point_cloud_utils.cpp
   src/data_source_rs.cpp
-  include/rs_tracker/align_icp.hpp
+  include/rs_tracker/align_gicp.hpp
   include/rs_tracker/common.hpp
   include/rs_tracker/gicp_cost.hpp
   include/rs_tracker/point_cloud_utils.hpp

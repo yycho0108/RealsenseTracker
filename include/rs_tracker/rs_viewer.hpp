@@ -10,7 +10,7 @@ struct RsViewerSettings {
 struct RsViewer {
   explicit RsViewer(const RsViewerSettings& settings);
   virtual ~RsViewer();
-  void SetupPipeline();
+  void SetupDriver();
   void SetupViewer();
   void Loop();
 

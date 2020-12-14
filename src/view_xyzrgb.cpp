@@ -44,6 +44,7 @@ int main() {
       .tag = "cloud",
       .geometry = cloud_geom,
       .color = {255, 255, 255},
+      .opacity = 1.0f,
       .representation = cho::vis::RenderData::Representation::kPoints,
       .quit = false};
   cho::vis::SubprocessViewer viewer{true};

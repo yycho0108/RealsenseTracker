@@ -20,13 +20,14 @@
 #include <cho_util/vis/subprocess_viewer.hpp>
 // #include <cho_util/vis/remote_viewer.hpp>
 
-#include "rs_tracker/align_icp.hpp"
+#include "rs_tracker/align_gicp.hpp"
 #include "rs_tracker/data_source.hpp"
 #include "rs_tracker/data_source_rs.hpp"
 #include "rs_tracker/point_cloud_utils.hpp"
 
-std::ostream& operator<<(std::ostream& os, const Eigen::Isometry3f& xfm){
-    return os << Eigen::Quaternionf{xfm.linear()}.coeffs().transpose() << '|' << xfm.translation().transpose();
+std::ostream& operator<<(std::ostream& os, const Eigen::Isometry3f& xfm) {
+  return os << Eigen::Quaternionf{xfm.linear()}.coeffs().transpose() << '|'
+            << xfm.translation().transpose();
 }
 
 struct RsTracker {
@@ -53,11 +54,13 @@ struct RsTracker {
     }
 
     const cho::vis::RenderData render_data{
-        .tag = "cloud",
-        .geometry = curr_cloud,
-        .color = {255, 255, 255},
-        .representation = cho::vis::RenderData::Representation::kPoints,
-        .quit = false};
+        "cloud",
+        curr_cloud,
+        {255, 255, 255},
+        1.0f,
+        cho::vis::RenderData::Representation::kPoints,
+        false};
+
     viewer.Render(std::move(render_data));
   }
 

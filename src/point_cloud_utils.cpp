@@ -91,6 +91,15 @@ void FindCorrespondences(const KDTree& tree,
   }
 }
 
+void ComputeCentroid(const cho::core::PointCloud<float, 3>& cloud,
+                     Eigen::Vector3f* const centroid) {
+  centroid->setZero();
+  for (int i = 0; i < cloud.GetNumPoints(); ++i) {
+    *centroid += cloud.GetPoint(i);
+  }
+  *centroid *= (1.0 / cloud.GetNumPoints());
+}
+
 void ComputeCovariances(const KDTree& tree,
                         const cho::core::PointCloud<float, 3>& cloud,
                         std::vector<Eigen::Matrix3f>* const covs,
@@ -154,4 +163,19 @@ void ComputeCovariances(const KDTree& tree,
     }
   }
 }
+
+void RemoveNans(const cho::core::PointCloud<float, 3>& cloud_in,
+                cho::core::PointCloud<float, 3>* const cloud_out) {
+  cloud_out->SetNumPoints(cloud_in.GetNumPoints());
+  int out_size{0};
+  for (int i = 0; i < cloud_in.GetNumPoints(); ++i) {
+    if (!cloud_in.GetPoint(i).allFinite()) {
+      continue;
+    }
+    cloud_out->GetPoint(out_size) = cloud_in.GetPoint(i);
+    ++out_size;
+  }
+  cloud_out->GetData().conservativeResize(3, out_size);
+}
+
 }  // namespace rs_tracker

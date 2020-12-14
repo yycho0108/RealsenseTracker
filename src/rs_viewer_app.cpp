@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
   }
 
   RsViewer viewer{settings};
-  viewer.SetupPipeline();
+  viewer.SetupDriver();
   viewer.SetupViewer();
   viewer.Loop();
   return 0;
