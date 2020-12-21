@@ -1,0 +1,9 @@
+modules
+|--- driver: realsense driver
+|--- feature: normals, fpfh
+|--- align: icp, gicp, kabsch, ...
+|--- loop_closure: detection of loop closure instances (DBow, ...)
+|--- optimize: nonlinear optimization on graph?
+|--- mapping: mapping / smoothing?
+|--- vis: visualization / utils
+|--- apps: demo apps

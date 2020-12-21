@@ -183,6 +183,7 @@ void RsDriver::Impl::Setup() {
   // Begin thread for reading data.
   running_ = true;
   reader_thread_ = std::thread([this]() {
+    fmt::print("START READER\n");
     while (running_) {
       for (const auto& pipe : pipelines) {
         // Get input data.
@@ -239,11 +240,20 @@ bool RsDriver::Impl::GetFrame(
   }
 
   // Export frame ...
+  if (depth_image) {
+    *depth_image = depth_image_;
+  }
+  if (color_image) {
+    *color_image = color_image_;
+  }
   if (point_cloud) {
     *point_cloud = point_cloud_;
   }
   if (color_cloud) {
     *color_cloud = color_cloud_;
+  }
+  if (timestamp) {
+    *timestamp = last_timestamp_;
   }
   return true;
 }

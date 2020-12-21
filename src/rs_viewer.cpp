@@ -1,6 +1,7 @@
 #include "rs_tracker/rs_viewer.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -56,7 +57,10 @@ RsViewer::Impl::Impl(const RsViewerSettings& settings)
 
 RsViewer::Impl::~Impl() = default;
 
-void RsViewer::Impl::SetupDriver() { driver_.Setup(); }
+void RsViewer::Impl::SetupDriver() {
+  driver_.Setup();
+  driver_.SetFrameRate(1.0 / settings_.frame_interval_ms);
+}
 
 void RsViewer::Impl::SetupViewer() { viewer_.Start(); }
 
@@ -76,18 +80,26 @@ void RsViewer::Impl::Loop() {
     const bool have_frame = driver_.GetFrame(
         &depth_image, &color_image, &point_cloud, &color_cloud, &timestamp);
     if (!have_frame || timestamp <= last_timestamp) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          static_cast<int>(settings_.frame_interval_ms / 8)));
       continue;
     }
+    last_timestamp = timestamp;
 
     // Render data.
+    std::vector<std::uint8_t> colors(color_cloud.GetNumPoints() * 3);
+    std::copy(color_cloud.GetPtr(),
+              color_cloud.GetPtr() + color_cloud.GetSize(), colors.data());
     cho::vis::RenderData render_data{
         .tag = "cloud",
         .geometry = point_cloud,
-        .color = {},  // hmm
+        .color = colors,
         .opacity = 1.0f,
         .representation = cho::vis::RenderData::Representation::kPoints,
         .quit = false};
     viewer_.Render(render_data);
+
+    // Render image ?
 
     // If enabled, save to file.
     if (!settings_.record_file.empty()) {

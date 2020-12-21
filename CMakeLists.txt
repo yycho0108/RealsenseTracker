@@ -72,13 +72,38 @@ target_link_libraries(rs_viewer_app rs_viewer Boost::program_options)
 
 # #############################################################################
 # Replay app
-add_executable(rs_replay_app src/rs_replay_app.cpp src/align_icp.cpp
-                             src/point_cloud_utils.cpp)
+add_executable(
+  rs_replay_app src/rs_replay_app.cpp src/align_icp.cpp src/align_gicp.cpp
+                src/point_cloud_utils.cpp src/fpfh.cpp)
 target_include_directories(rs_replay_app PUBLIC include)
 target_include_directories(rs_replay_app PRIVATE ${BOOST_INCLUDE_DIRS})
 target_link_libraries(
-  rs_replay_app PRIVATE fmt ChoUtil::core ChoUtil::vis Eigen3::Eigen
-                        Boost::program_options)
+  rs_replay_app
+  PRIVATE fmt
+          ChoUtil::core
+          ChoUtil::vis
+          Eigen3::Eigen
+          Boost::program_options
+          ${CERES_LIBRARIES}
+          teaser_interface)
+# #############################################################################
+
+# #############################################################################
+# Alignment app
+add_executable(
+  rs_align_app src/rs_align_app.cpp src/align_icp.cpp src/align_gicp.cpp
+               src/point_cloud_utils.cpp src/fpfh.cpp)
+target_include_directories(rs_align_app PUBLIC include)
+target_include_directories(rs_align_app PRIVATE ${BOOST_INCLUDE_DIRS})
+target_link_libraries(
+  rs_align_app
+  PRIVATE fmt
+          ChoUtil::core
+          ChoUtil::vis
+          Eigen3::Eigen
+          Boost::program_options
+          ${CERES_LIBRARIES}
+          teaser_interface)
 # #############################################################################
 
 # #############################################################################
@@ -150,3 +175,5 @@ if(FALSE)
   endforeach()
 endif()
 # #############################################################################
+
+add_subdirectory(third_party)

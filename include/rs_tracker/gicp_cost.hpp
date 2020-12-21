@@ -19,7 +19,7 @@ struct GICPCost {
   using RefVec3f = Eigen::Ref<const Eigen::Vector3f>;
   using RefMat3f = Eigen::Ref<const Eigen::Matrix3f>;
 
-  explicit GICPCost(const RefVec3f& src, const RefVec3f& dst,
+  explicit GICPCost(const Eigen::Vector3f& src, const Eigen::Vector3f& dst,
                     const RefMat3f& src_cov, const RefMat3f& dst_cov)
       : src(src), dst(dst), src_cov(src_cov), dst_cov(dst_cov) {}
 

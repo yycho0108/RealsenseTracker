@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -10,12 +11,16 @@
 
 namespace rs_tracker {
 
-bool AlignIcp3d(const cho::core::PointCloud<float, 3>& src,
-                const cho::core::PointCloud<float, 3>& dst,
-                const KDTree& dst_tree, Eigen::Isometry3f* const transform);
+bool SolveKabsch(const Cloud3f& src, const Cloud3f& dst,
+                 const std::vector<std::pair<int, int>>& indices,
+                 const std::vector<float>& weights,
+                 Eigen::Isometry3f* const xfm);
 
-bool AlignIcp3d(const cho::core::PointCloud<float, 3>& src,
-                const cho::core::PointCloud<float, 3>& dst,
+bool AlignIcp3d(const Cloud3f& src, const Cloud3f& dst,
+                const KDTree3f& dst_tree, const int max_iter,
+                Eigen::Isometry3f* const transform);
+
+bool AlignIcp3d(const Cloud3f& src, const Cloud3f& dst, const int max_iter,
                 Eigen::Isometry3f* const transform);
 
 }  // namespace rs_tracker

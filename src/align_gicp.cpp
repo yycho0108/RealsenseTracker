@@ -1,5 +1,6 @@
 #include "rs_tracker/align_icp.hpp"
 
+#include <ceres/loss_function.h>
 #include <fmt/printf.h>
 
 #include "rs_tracker/common.hpp"
@@ -37,8 +38,7 @@ static ceres::Solver::Options GetOptions() {
   return options;
 }
 
-float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
-                       const cho::core::PointCloud<float, 3>& dst,
+float ComputeAlignment(const Cloud3f& src, const Cloud3f& dst,
                        const std::vector<Eigen::Matrix3f>& src_covs,
                        const std::vector<Eigen::Matrix3f>& dst_covs,
                        const std::vector<int>& dst_indices,
@@ -64,7 +64,7 @@ float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
     ceres::CostFunction* cost =
         GICPCost::Create(src.GetPoint(src_i), dst.GetPoint(dst_i),
                          src_covs[src_i], dst_covs[dst_i]);
-    ceres::LossFunction* loss = new ceres::SoftLOneLoss(2.0f);
+    ceres::LossFunction* loss = new ceres::HuberLoss(0.5f);
     // ceres::LossFunction* loss = nullptr;
     problem.AddResidualBlock(cost, loss, rxn, txn);
   }
@@ -102,32 +102,32 @@ float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
   return summary.final_cost;
 }
 
-float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
-                       const cho::core::PointCloud<float, 3>& dst,
+float ComputeAlignment(const Cloud3f& src, const Cloud3f& dst,
                        Eigen::Isometry3f* const transform) {
-  static constexpr const int kMaxIter = 128;
+  static constexpr const int kMaxIter = 16;
 
   // Correspondences
   fmt::print("TREE\n");
-  std::shared_ptr<KDTree> src_tree =
-      std::make_shared<KDTree>(3, std::cref(src), 10);
-  src_tree->index->buildIndex();
-  std::shared_ptr<KDTree> dst_tree =
-      std::make_shared<KDTree>(3, std::cref(dst), 10);
-  dst_tree->index->buildIndex();
+  std::shared_ptr<KDTree3f> src_tree =
+      std::make_shared<KDTree3f>(std::cref(src), 10);
+  // src_tree->index->buildIndex();
+  std::shared_ptr<KDTree3f> dst_tree =
+      std::make_shared<KDTree3f>(std::cref(dst), 10);
+  // dst_tree->index->buildIndex();
 
   // Covariances
   fmt::print("COV\n");
   std::vector<Eigen::Matrix3f> src_covs(src.GetNumPoints());
-  ComputeCovariances(*src_tree, src, &src_covs, true);
+  ComputeCovariances(*src_tree, src, &src_covs, false);
   std::vector<Eigen::Matrix3f> dst_covs(dst.GetNumPoints());
-  ComputeCovariances(*dst_tree, dst, &dst_covs, true);
+  ComputeCovariances(*dst_tree, dst, &dst_covs, false);
 
   // TODO(yycho0108): Accept estimate as an input argument.
   // Eigen::Isometry3f estimate = transform;
+  fmt::print("SOLVE\n");
   Eigen::Isometry3f estimate = Eigen::Isometry3f::Identity();
-  cho::core::PointCloud<float, 3>
-      tmp;  // = (estimate * src.transpose()).transpose();
+  Cloud3f tmp;
+  tmp.SetNumPoints(src.GetNumPoints());
   tmp.GetData() = estimate * src.GetData();
   std::vector<Eigen::Matrix3f> tmp_covs(src_covs);
   float cost{0};
@@ -143,6 +143,15 @@ float ComputeAlignment(const cho::core::PointCloud<float, 3>& src,
     Eigen::Isometry3f delta_xfm = Eigen::Isometry3f::Identity();
     cost = ComputeAlignment(src, dst, src_covs, dst_covs, nn_indices, estimate,
                             &delta_xfm);
+    if (!delta_xfm.matrix().allFinite()) {
+      fmt::print(
+          "N!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+          "\n");
+      return std::numeric_limits<float>::infinity();
+    }
+    if (!src.GetData().allFinite() || !dst.GetData().allFinite()) {
+      fmt::print("NANI!?\n");
+    }
 
     // Update transforms.
     estimate = delta_xfm;

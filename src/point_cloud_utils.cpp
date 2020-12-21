@@ -3,11 +3,12 @@
 #include <tuple>
 #include <unordered_map>
 
-#include <boost/functional/hash.hpp>
-
+#include <fmt/printf.h>
 #include <Eigen/Dense>
+#include <Eigen/Eigen>
 #include <Eigen/Geometry>
 #include <Eigen/SVD>
+#include <boost/functional/hash.hpp>
 
 template <typename T>
 struct MatrixHash : std::unary_function<T, std::size_t> {
@@ -22,8 +23,7 @@ struct MatrixHash : std::unary_function<T, std::size_t> {
 
 namespace rs_tracker {
 
-void ComputeExtents(const cho::core::PointCloud<float, 3>& cloud,
-                    Eigen::AlignedBox3f* const box) {
+void ComputeExtents(const Cloud3f& cloud, Eigen::AlignedBox3f* const box) {
   box->setEmpty();
   for (int i = 0; i < cloud.GetNumPoints(); ++i) {
     const auto& p = cloud.GetPoint(i);
@@ -31,9 +31,8 @@ void ComputeExtents(const cho::core::PointCloud<float, 3>& cloud,
   }
 }
 
-void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
-                     const float voxel_size,
-                     cho::core::PointCloud<float, 3>* const cloud_out) {
+void DownsampleVoxel(const Cloud3f& cloud_in, const float voxel_size,
+                     Cloud3f* const cloud_out) {
   std::unordered_map<Eigen::Vector3i, int, MatrixHash<Eigen::Vector3i>> vox;
 
   // Vox
@@ -49,7 +48,7 @@ void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
 
   // Shallow aliasing check.
   if (cloud_out == &cloud_in) {
-    cho::core::PointCloud<float, 3> tmp;
+    Cloud3f tmp;
     tmp.SetNumPoints(vox.size());
     int i = 0;
     for (const auto& p : vox) {
@@ -68,8 +67,7 @@ void DownsampleVoxel(const cho::core::PointCloud<float, 3>& cloud_in,
   }
 }
 
-void FindCorrespondences(const KDTree& tree,
-                         const cho::core::PointCloud<float, 3>& source,
+void FindCorrespondences(const KDTree3f& tree, const Cloud3f& source,
                          std::vector<int>* const indices,
                          std::vector<float>* const squared_distances) {
   const int n = source.GetNumPoints();
@@ -91,8 +89,7 @@ void FindCorrespondences(const KDTree& tree,
   }
 }
 
-void ComputeCentroid(const cho::core::PointCloud<float, 3>& cloud,
-                     Eigen::Vector3f* const centroid) {
+void ComputeCentroid(const Cloud3f& cloud, Eigen::Vector3f* const centroid) {
   centroid->setZero();
   for (int i = 0; i < cloud.GetNumPoints(); ++i) {
     *centroid += cloud.GetPoint(i);
@@ -100,8 +97,7 @@ void ComputeCentroid(const cho::core::PointCloud<float, 3>& cloud,
   *centroid *= (1.0 / cloud.GetNumPoints());
 }
 
-void ComputeCovariances(const KDTree& tree,
-                        const cho::core::PointCloud<float, 3>& cloud,
+void ComputeCovariances(const KDTree3f& tree, const Cloud3f& cloud,
                         std::vector<Eigen::Matrix3f>* const covs,
                         const bool use_gicp) {
   // Set default number of neighbors and allocate containers.
@@ -164,8 +160,7 @@ void ComputeCovariances(const KDTree& tree,
   }
 }
 
-void RemoveNans(const cho::core::PointCloud<float, 3>& cloud_in,
-                cho::core::PointCloud<float, 3>* const cloud_out) {
+void RemoveNans(const Cloud3f& cloud_in, Cloud3f* const cloud_out) {
   cloud_out->SetNumPoints(cloud_in.GetNumPoints());
   int out_size{0};
   for (int i = 0; i < cloud_in.GetNumPoints(); ++i) {
@@ -176,6 +171,48 @@ void RemoveNans(const cho::core::PointCloud<float, 3>& cloud_in,
     ++out_size;
   }
   cloud_out->GetData().conservativeResize(3, out_size);
+}
+
+void ComputeNormals(const Cloud3f& cloud, const KDTree3f& tree,
+                    const float num_neighbors, Cloud3f* const normals) {
+  std::vector<int> oi(num_neighbors);
+  std::vector<float> od_sqr(num_neighbors);
+
+  normals->SetNumPoints(cloud.GetNumPoints());
+  for (int i = 0; i < cloud.GetNumPoints(); ++i) {
+    const Eigen::Vector3f& p = cloud.GetPoint(i);
+    tree.index->knnSearch(p.data(), num_neighbors, oi.data(), od_sqr.data());
+
+    // Centroid
+    Vector3f centroid = Vector3f::Zero();
+    for (const auto j : oi) {
+      centroid += cloud.GetPoint(j);
+    }
+    centroid /= num_neighbors;
+
+    // Covariance
+    Eigen::Matrix3f cov = Eigen::Matrix3f::Zero();
+    for (const auto j : oi) {
+      const Vector3f delta = cloud.GetPoint(j) - centroid;
+      cov.noalias() += delta * delta.transpose();
+    }
+
+    // Normal
+    const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXf> eig{cov};
+    normals->GetPoint(i) = eig.eigenvectors().col(0);
+  }
+}
+
+void OrientNormals(const Cloud3f& cloud, const Vector3f& viewpoint,
+                   Cloud3f* const normals) {
+  const int n = cloud.GetNumPoints();
+  for (int i = 0; i < n; ++i) {
+    const Vector3f ray = cloud.GetPoint(i) - viewpoint;
+    auto normal = normals->GetPoint(i);
+    if (ray.dot(normal) > 0) {
+      normal *= -1;
+    }
+  }
 }
 
 }  // namespace rs_tracker
