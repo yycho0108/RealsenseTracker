@@ -1,1 +1,5 @@
+add_subdirectory(common)
+add_subdirectory(driver)
 add_subdirectory(align)
+add_subdirectory(vis)
+add_subdirectory(app)
